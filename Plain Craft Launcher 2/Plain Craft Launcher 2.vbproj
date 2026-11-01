@@ -926,6 +926,11 @@
       <Name>PCLCS</Name>
       <Private>True</Private>
     </ProjectReference>
+    <ProjectReference Include="..\PclLinkHelper\PclLinkHelper.csproj">
+      <Project>{9c0e4b1a-2c7d-4f5e-9a11-7b3d2e8f6a44}</Project>
+      <Name>PclLinkHelper</Name>
+      <Private>True</Private>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\PCLCS\bin\PCLCS.dll">

@@ -794,6 +794,7 @@ ForcedPass:
         ProcessCore.Start()
         ProcessCore.BeginOutputReadLine()
         ProcessCore.BeginErrorReadLine()
+        Global.PclLinkHelper.Helper.StartHeartbeat(PathEasyTier, RPCPort)
     End Sub
     Private Sub ProcessLogLine(Line As String)
         '记录日志
@@ -1024,6 +1025,7 @@ ForcedPass:
         Static IsTimerStarted As Boolean = False
         If IsTimerStarted Then Return
         ModLinkAuth.EnsureStarted(Me)
+        Global.PclLinkHelper.Helper.InitLinkPanels(Me)
         RunInNewThread(
         Sub()
             Dim Counter As Integer = 0
