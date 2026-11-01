@@ -1166,7 +1166,7 @@ namespace PclLinkHelper
                         string name = ExtractJson(ro, "name") ?? "?";
                         long pl = JsonNumber(ro, "players");
                         string invite = ExtractJson(ro, "invite");
-                        roomLines.Add("• " + name + " · " + pl + " 人");
+                        roomLines.Add("• " + name + " · " + pl + " 人" + (string.IsNullOrEmpty(invite) ? "" : " · 邀请码 " + invite));
                         if (!string.IsNullOrEmpty(invite))
                         {
                             Button b = new Button();

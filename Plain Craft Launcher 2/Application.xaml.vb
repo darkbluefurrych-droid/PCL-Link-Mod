@@ -1,4 +1,4 @@
-Imports System.Reflection
+﻿Imports System.Reflection
 Imports System.Windows.Threading
 
 Public Class Application
@@ -6,6 +6,8 @@ Public Class Application
     '开始
     Private Sub Application_Startup(sender As Object, e As StartupEventArgs) Handles Me.Startup
         Try
+            '加载内嵌的联机助手 DLL
+            AddHandler AppDomain.CurrentDomain.AssemblyResolve, AddressOf ResolveEmbeddedAssemblies
             '核心初始化
             MeloongCore.Main.Init("PCL")
             MeloongCore.Wpf.Main.Init()
@@ -285,4 +287,22 @@ RetryCacheCheck:
         End Select
     End Sub
 
+    ''' <summary>
+    ''' 从 exe 内嵌资源加载联机助手 DLL（单文件发布用）。
+    ''' </summary>
+    Private Shared Function ResolveEmbeddedAssemblies(sender As Object, args As ResolveEventArgs) As Assembly
+        Try
+            Dim name As String = New AssemblyName(args.Name).Name
+            If name <> "PclLinkHelper" Then Return Nothing
+            Using stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("PclLinkHelper.dll")
+                If stream Is Nothing Then Return Nothing
+                Dim data(CInt(stream.Length) - 1) As Byte
+                stream.Read(data, 0, data.Length)
+                Return Assembly.Load(data)
+            End Using
+        Catch ex As Exception
+            Logger.Warn(ex, "加载内嵌联机助手失败")
+        End Try
+        Return Nothing
+    End Function
 End Class

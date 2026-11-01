@@ -913,6 +913,11 @@
     <None Include="Resources\lwjgl-unsafe-agent.jar" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Resources\PclLinkHelper.dll" Condition="Exists('Resources\PclLinkHelper.dll')">
+      <LogicalName>PclLinkHelper.dll</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\MeloongCore\Shared\MeloongCore.csproj">
       <Project>{d22bbf3c-2177-0208-4e29-8466aa41ac6f}</Project>
       <Name>MeloongCore</Name>
