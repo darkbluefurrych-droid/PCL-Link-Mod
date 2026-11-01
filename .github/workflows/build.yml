@@ -62,6 +62,11 @@ jobs:
     - name: Build
       run: msbuild "Plain Craft Launcher 2\Plain Craft Launcher 2.vbproj" -p:Configuration=${{ matrix.configuration }}
 
+    - name: Collect Helper DLL
+      run: |
+        Copy-Item "PclLinkHelper\bin\${{ matrix.configuration }}\PclLinkHelper.dll" "Plain Craft Launcher 2\obj\${{ matrix.configuration }}\PclLinkHelper.dll" -Force
+        Get-ChildItem "Plain Craft Launcher 2\obj\${{ matrix.configuration }}" | Select-Object Name
+
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v7
       with:
