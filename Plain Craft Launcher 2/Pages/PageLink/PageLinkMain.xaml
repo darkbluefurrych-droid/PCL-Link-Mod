@@ -210,6 +210,6 @@
             </Grid>
         </Grid>
 
-    </Grid>
         <Grid x:Name="PanAlways" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="15" Opacity="0.5" />
+    </Grid>
 </local:MyPageRight>
