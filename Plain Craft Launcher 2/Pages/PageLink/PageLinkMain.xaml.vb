@@ -1,7 +1,10 @@
-Imports System.Collections.ObjectModel
+﻿Imports System.Collections.ObjectModel
+Imports System.Diagnostics
 Imports System.Globalization
 Imports System.Net.Sockets
 Imports System.Reflection
+Imports System.Text
+Imports System.Threading
 Imports PCL
 
 Public Class PageLinkMain
@@ -93,6 +96,10 @@ Public Class PageLinkMain
 
     '创建
     Private Sub Create_MouseLeftButtonUp() Handles PanSelectCreate.MouseLeftButtonUp
+        If ModLinkAuth.InQueue Then
+            Panic("需要排队", $"$当前联机人数 {ModLinkAuth.Players}/{ModLinkAuth.Capacity}，你排在第 {ModLinkAuth.QueuePosition} 位。{vbCrLf}请等空出位置后再试。")
+            Return
+        End If
         '输入端口号
         Dim Port As String = MyMsgBoxInput("输入端口", $"在单人游戏的暂停菜单选择 {vbLQ}对局域网开放{vbRQ}，然后输入端口数字。{vbCrLf}甚至可以输入其他游戏的端口……嗯……",
             ValidateRules:=New Collection(Of Validate) From {New ValidateInteger(1024, 65535)},
@@ -123,6 +130,10 @@ Public Class PageLinkMain
     ''' 输入邀请码，切换到联机页并立即加入房间。
     ''' </summary>
     Public Shared Sub Join() Handles PanSelectJoin.MouseLeftButtonUp
+        If ModLinkAuth.InQueue Then
+            Hint($"当前联机人数 {ModLinkAuth.Players}/{ModLinkAuth.Capacity}，你排在第 {ModLinkAuth.QueuePosition} 位，请等空出位置后再试。", HintType.Red)
+            Return
+        End If
         Dim Code As String = MyMsgBoxInput("输入邀请码", "输入房主发给你的邀请码。",
             HintText:=If(String.IsNullOrEmpty(LastCode), "", "使用上一次的邀请码"))
         If Not String.IsNullOrEmpty(LastCode) AndAlso Code IsNot Nothing AndAlso Code = "" Then Code = LastCode
@@ -423,21 +434,14 @@ Public Class PageLinkMain
         New LoaderTask(Of Integer, Integer)("启动联机模块", AddressOf InitLaunch) With {.ProgressWeight = 50}
     })
 
-    '1. 获取服务器配置
+    '联机修改版内置配置（不使用官方联网配置）
+    Private Const LinkConfigJson As String = "{""Link"":{""EasyTierVersion"":245,""Downloads"":[""http://106.55.39.109:8088/easytier/easytier-windows-{arch}-v2.4.5.zip""],""Argument"":""--enable-kcp-proxy --use-smoltcp --encryption-algorithm=chacha20 --no-tun --compression=zstd --multi-thread"",""PeersBlackList"":[],""RandomPeer"":3,""MandatoryPeers"":[],""Peers"":[""tcp://106.55.39.109:11610""],""DiscoverPeer"":""tcp://106.55.39.109:11610"",""DiscoverPeerId"":226}}"
+
+    '1. 获取联机配置（联机修改版：内置配置，不依赖官方服务器）
     Private Sub InitConfig(Task As LoaderTask(Of Integer, Integer))
-        UpdateLoadingPage("正在联网获取配置……", "联网获取配置")
-        If VersionBranchMain <> "Official" Then
-            Throw New Exception($"$开源版无法联网获取配置。{vbCrLf}你可以在 PCL 官方版的缓存文件夹下查看 ServerConfig 的当前内容， 并在代码中进行相应修改。")
-        End If
-        ServerLoader.WaitForExit(LoaderToSyncProgress:=Task)
-        If ServerConfig Is Nothing Then Throw New Exception("无法从服务器获取配置")
-        '检查是否已禁用联机功能
-        Dim DisableReason = ServerConfig("Link")?("DisableReason2")?.ToString
-        If Not String.IsNullOrEmpty(DisableReason) Then Throw New Exception("$" & DisableReason) 'TODO: 可能不会显示错误原因？
-        If CType(ServerConfig("Link"), JObject).ContainsKey("MinVersionCode") AndAlso
-           VersionCode < ServerConfig("Link")("MinVersionCode").ToObject(Of Integer) Then
-            Throw New Exception("$你的 PCL 版本太老了，请在更新 PCL 之后再联机！")
-        End If
+        UpdateLoadingPage("正在连接联机服务器……", "连接联机服务器")
+        ServerConfig = JObject.Parse(LinkConfigJson)
+        If ServerConfig("Link") Is Nothing Then Throw New Exception("联机配置缺失")
     End Sub
 
     '2. 获取需要下载的文件
@@ -487,8 +491,7 @@ Public Class PageLinkMain
         If FileUtils.Exists(PathEasyTier & "EasyTier.zip") Then
             '解压
             Dim ExtractPath As String = RequestTaskTempFolder()
-            'FileUtils.ExtractToDirectory(PathEasyTier & "EasyTier.zip", ExtractPath,
-            '    progressHandler:=Sub(Percentage) Task.Progress = Percentage * 0.05)
+            FileUtils.ExtractToDirectory(PathEasyTier & "EasyTier.zip", ExtractPath)
             DirectoryUtils.Copy(DirectoryUtils.EnumerateDirectories(ExtractPath, True).First, PathEasyTier)
             '重命名
             FileUtils.Move(PathEasyTier & "easytier-core.exe", PathEasyTier & "联机模块.exe")
@@ -502,6 +505,7 @@ Public Class PageLinkMain
         UpdateLoadingPage("正在获取节点列表……", "获取节点列表")
         Dim RawPeers As List(Of String)
         Dim CustomPeers As String = Settings.Get(Of String)("LinkCustomPeer")
+        If String.IsNullOrWhiteSpace(CustomPeers) Then CustomPeers = ModLinkAuth.RelayPeer
         If String.IsNullOrWhiteSpace(CustomPeers) Then
             If DiscoverNodeID = -2 AndAlso Not IsServerSide Then
                 Panic("未填写自定义节点设置", $"$你必须在 {vbLQ}自定义节点{vbRQ} 设置中填写与房主相同的内容，{vbCrLf}才能进入该房间！")
@@ -910,10 +914,36 @@ ForcedPass:
     ''' 这会过滤掉尚未完成连接的其他节点以及自己。
     ''' 若在加载完成后连续获取失败 3 次，则会强制断开连接。
     ''' </summary>
+    ''' <summary>
+    ''' 调用 EasyTier CLI 读取节点 JSON（开源版中该函数被移除，此处补回）。
+    ''' </summary>
+    Private Shared Function ReadEasyTierPeersJson(exe As String, rpcPort As Integer) As String
+        Try
+            If Not FileUtils.Exists(exe) Then Return ""
+            Dim psi As New ProcessStartInfo(exe, $"-o json -p 127.0.0.1:{rpcPort} peer") With {
+                .UseShellExecute = False,
+                .CreateNoWindow = True,
+                .RedirectStandardOutput = True,
+                .RedirectStandardError = True,
+                .StandardOutputEncoding = Encoding.UTF8,
+                .StandardErrorEncoding = Encoding.UTF8,
+                .WorkingDirectory = IO.Path.GetDirectoryName(exe)
+            }
+            Using p As Process = Process.Start(psi)
+                Dim output As String = p.StandardOutput.ReadToEnd()
+                p.WaitForExit(3000)
+                Return output
+            End Using
+        Catch ex As Exception
+            Logger.Warn(ex, "读取联机节点失败")
+            Return ""
+        End Try
+    End Function
+
     Private RefreshPeerLoader As New LoaderTask(Of Integer, List(Of Peer))("EasyTier CLI", AddressOf RefreshPeer)
     Private Sub RefreshPeer()
         Try
-            Dim CliResult = "" 'StartProcessAndGetOutput(PathEasyTier & "联机模块 CLI.exe", $"-o json -p 127.0.0.1:{RPCPort} peer", 2000, Encoding:=Encoding.UTF8, PrintLog:=False)
+            Dim CliResult = ReadEasyTierPeersJson(PathEasyTier & "联机模块 CLI.exe", RPCPort)
             '解析
             If Not CliResult.Contains("lat_ms") Then Throw New Exception("CLI 调用失败：" & vbCrLf & CliResult)
             If GetUuid() Mod If(ModeDebug, 23, 103) = 0 Then Logger.Info($"CLI 输出抽样：{vbCrLf}{CliResult}")
@@ -993,6 +1023,7 @@ ForcedPass:
     Private Sub StartTimerThread() Handles Me.Loaded
         Static IsTimerStarted As Boolean = False
         If IsTimerStarted Then Return
+        ModLinkAuth.EnsureStarted(Me)
         RunInNewThread(
         Sub()
             Dim Counter As Integer = 0
@@ -1004,6 +1035,7 @@ ForcedPass:
                     If Counter >= 1000 Then
                         Counter = 0
                         Update()
+                        ModLinkAuth.UpdateUi()
                     End If
                     '每 200ms 更新进度条
                     If LinkState = LinkStates.Loading Then RunInUi(AddressOf UpdateProgressBar)
